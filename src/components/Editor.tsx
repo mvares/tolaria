@@ -168,6 +168,10 @@ export const Editor = memo(function Editor({
 
   // Track editor mount state
   useEffect(() => {
+    // Check if already mounted (prosemirrorView exists)
+    if (editor.prosemirrorView) {
+      editorMountedRef.current = true
+    }
     const cleanup = editor.onMount(() => {
       editorMountedRef.current = true
       // Execute any pending content swap that was queued before mount
@@ -196,34 +200,49 @@ export const Editor = memo(function Editor({
     if (!tab) return
 
     const applyBlocks = (blocks: any[]) => {
-      editor.replaceBlocks(editor.document, blocks)
+      try {
+        // Clear all current content and insert new blocks
+        const current = editor.document
+        if (current.length > 0 && blocks.length > 0) {
+          editor.replaceBlocks(current, blocks)
+        } else if (blocks.length > 0) {
+          // Editor empty — insert at the beginning
+          editor.insertBlocks(blocks, current[0], 'before')
+        }
+      } catch (err) {
+        console.error('applyBlocks failed, trying fallback:', err)
+        // Fallback: use tiptap's setContent via blocksToHTMLLossy
+        try {
+          const html = editor.blocksToHTMLLossy(blocks)
+          editor._tiptapEditor.commands.setContent(html)
+        } catch (err2) {
+          console.error('Fallback also failed:', err2)
+        }
+      }
     }
 
     try {
-      if (cache.has(activeTabPath)) {
-        // Instant switch — use cached blocks
-        const cached = cache.get(activeTabPath)!
-        if (editorMountedRef.current) {
-          applyBlocks(cached)
+      const doSwap = () => {
+        if (cache.has(activeTabPath)) {
+          applyBlocks(cache.get(activeTabPath)!)
         } else {
-          pendingSwapRef.current = () => applyBlocks(cached)
-        }
-      } else {
-        // First open — parse markdown
-        const [, body] = splitFrontmatter(tab.content)
-        const preprocessed = preProcessWikilinks(body)
-        const targetPath = activeTabPath
-        editor.tryParseMarkdownToBlocks(preprocessed).then(blocks => {
-          const withWikilinks = injectWikilinks(blocks)
-          // Guard: skip if user switched tabs while we were parsing
-          if (prevActivePathRef.current !== targetPath) return
-          cache.set(targetPath, withWikilinks)
-          if (editorMountedRef.current) {
+          const [, body] = splitFrontmatter(tab.content)
+          const preprocessed = preProcessWikilinks(body)
+          const targetPath = activeTabPath
+          editor.tryParseMarkdownToBlocks(preprocessed).then(blocks => {
+            const withWikilinks = injectWikilinks(blocks)
+            if (prevActivePathRef.current !== targetPath) return
+            cache.set(targetPath, withWikilinks)
             applyBlocks(withWikilinks)
-          } else {
-            pendingSwapRef.current = () => applyBlocks(withWikilinks)
-          }
-        })
+          })
+        }
+      }
+
+      // If editor is mounted, swap immediately. Otherwise wait for mount.
+      if (editor.prosemirrorView) {
+        doSwap()
+      } else {
+        pendingSwapRef.current = doSwap
       }
     } catch (err) {
       console.error('Failed to swap editor content:', err)
