@@ -13,6 +13,7 @@ import { useVaultLoader } from './hooks/useVaultLoader'
 import { useNoteActions } from './hooks/useNoteActions'
 import { useAppKeyboard } from './hooks/useAppKeyboard'
 import { isTauri } from './mock-tauri'
+import { useKeyboardNavigation } from './hooks/useKeyboardNavigation'
 import type { SidebarSelection, GitCommit } from './types'
 import './App.css'
 
@@ -107,6 +108,17 @@ function App() {
     onSave: () => setToastMessage('Saved'),
     activeTabPathRef: notes.activeTabPathRef,
     handleCloseTabRef: notes.handleCloseTabRef,
+  })
+
+  useKeyboardNavigation({
+    tabs: notes.tabs,
+    activeTabPath: notes.activeTabPath,
+    entries: vault.entries,
+    selection,
+    allContent: vault.allContent,
+    onSwitchTab: notes.handleSwitchTab,
+    onReplaceActiveTab: notes.handleReplaceActiveTab,
+    onSelectNote: notes.handleSelectNote,
   })
 
   const handleSidebarResize = useCallback((delta: number) => {
